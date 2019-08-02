@@ -130,6 +130,8 @@ redis_arg1(struct msg *r)
     case MSG_REQ_REDIS_RPOPLPUSH:
     case MSG_REQ_REDIS_RPUSHX:
 
+    case MSG_REQ_REDIS_SELECT:
+
     case MSG_REQ_REDIS_SISMEMBER:
 
     case MSG_REQ_REDIS_ZRANK:
@@ -946,6 +948,13 @@ redis_parse_req(struct msg *r)
                     break;
                 }
 
+                if (str6icmp(m, 's', 'e', 'l', 'e', 'c', 't')) {
+                    r->type = MSG_REQ_REDIS_SELECT;
+                    r->msg_routing = ROUTING_LOCAL_NODE_ONLY; /* 0 expected */
+                    r->is_read = 0;
+                    break;
+                }
+
                 if (str6icmp(m, 's', 'e', 't', 'b', 'i', 't')) {
                     r->type = MSG_REQ_REDIS_SETBIT;
                     r->is_read = 0;
@@ -1431,6 +1440,10 @@ redis_parse_req(struct msg *r)
 
             if (r->type == MSG_REQ_REDIS_CONFIG && !str3icmp(m, 'g', 'e', 't')) {
                 log_error("Redis CONFIG command not supported '%.*s'", p - m, m);
+                goto error;
+            }
+            if (r->type == MSG_REQ_REDIS_SELECT && (r->rlen != 1 || *p != '0')) {
+                log_error("Redis SELECT command not supported for db '%.*s'", r->rlen, p);
                 goto error;
             }
             m = p + r->rlen;
