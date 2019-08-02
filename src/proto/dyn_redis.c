@@ -130,8 +130,6 @@ redis_arg1(struct msg *r)
     case MSG_REQ_REDIS_RPOPLPUSH:
     case MSG_REQ_REDIS_RPUSHX:
 
-    case MSG_REQ_REDIS_SELECT:
-
     case MSG_REQ_REDIS_SISMEMBER:
 
     case MSG_REQ_REDIS_ZRANK:
@@ -316,6 +314,16 @@ redis_argeval(struct msg *r)
     }
 
     return false;
+}
+
+/*
+ * Return true, if the redis command is either SELECT. These commands
+ * have a special format with exactly 1 arguments and only one value 0 is valid.
+ */
+static bool
+redis_argselect(struct msg *r)
+{
+    return MSG_REQ_REDIS_SELECT == r->type;
 }
 
 /*
@@ -1385,6 +1393,16 @@ redis_parse_req(struct msg *r)
                         goto done;
                     }
                     state = SW_ARGN_LEN;
+                } else if (redis_argselect(r)) {
+                	    if (r->rnarg != 0) {
+                        goto error;
+                    }      
+                    if (r->key_end - r->key_start != 1 || *r->key_start != '0') {
+                        log_error("Redis SELECT command not supported for db '%.*s'"
+                                 , r->key_end - r->key_start, r->key_start);
+                        goto error;
+                    }
+                	    goto done;
                 } else {
                     goto error;
                 }
@@ -1440,10 +1458,6 @@ redis_parse_req(struct msg *r)
 
             if (r->type == MSG_REQ_REDIS_CONFIG && !str3icmp(m, 'g', 'e', 't')) {
                 log_error("Redis CONFIG command not supported '%.*s'", p - m, m);
-                goto error;
-            }
-            if (r->type == MSG_REQ_REDIS_SELECT && (r->rlen != 1 || *p != '0')) {
-                log_error("Redis SELECT command not supported for db '%.*s'", r->rlen, p);
                 goto error;
             }
             m = p + r->rlen;
