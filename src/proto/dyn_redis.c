@@ -323,7 +323,13 @@ redis_argeval(struct msg *r)
 static bool
 redis_argselect(struct msg *r)
 {
-    return MSG_REQ_REDIS_SELECT == r->type;
+	switch (r->type) {
+	case MSG_REQ_REDIS_SELECT:
+		return true;
+	default:
+		break;
+	}
+    return false;
 }
 
 /*
@@ -1263,7 +1269,7 @@ redis_parse_req(struct msg *r)
                         goto done;
                     } else if (r->narg == 1) {
                         goto error;
-                    } else if (redis_argeval(r)) {
+                    } else if (redis_argeval(r) || redis_argselect(r)) {
                         state = SW_ARG1_LEN;
                     } else {
                         state = SW_KEY_LEN;
@@ -1393,16 +1399,6 @@ redis_parse_req(struct msg *r)
                         goto done;
                     }
                     state = SW_ARGN_LEN;
-                } else if (redis_argselect(r)) {
-                	    if (r->rnarg != 0) {
-                        goto error;
-                    }      
-                    if (r->key_end - r->key_start != 1 || *r->key_start != '0') {
-                        log_error("Redis SELECT command not supported for db '%.*s'"
-                                 , r->key_end - r->key_start, r->key_start);
-                        goto error;
-                    }
-                	    goto done;
                 } else {
                     goto error;
                 }
@@ -1460,6 +1456,11 @@ redis_parse_req(struct msg *r)
                 log_error("Redis CONFIG command not supported '%.*s'", p - m, m);
                 goto error;
             }
+            if (r->type == MSG_REQ_REDIS_SELECT && (r->rlen != 1 || *p != '0')) {
+                log_error("Redis SELECT command not supported for db '%.*s'"
+                         , r->rlen, p);
+                goto error;
+            }
             m = p + r->rlen;
 
             if (m >= b->last) {
@@ -1515,6 +1516,11 @@ redis_parse_req(struct msg *r)
                         goto error;
                     }
                     state = SW_ARG2_LEN;
+                } else if (redis_argselect(r)) {
+                    if (r->rnarg != 0) {
+                        goto error;
+                    }
+                    goto done;
                 } else {
                     goto error;
                 }
